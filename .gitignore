@@ -11,3 +11,6 @@ sneakers.db
 
 # IDE
 .vscode/
+
+# Streamlit Secrets
+.streamlit/secrets.toml

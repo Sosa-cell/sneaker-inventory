@@ -1,193 +1,213 @@
 import streamlit as st
-import sqlite3
 import pandas as pd
-from pathlib import Path
+from streamlit_gsheets import GSheetsConnection
 
 # --- Page & Database Configuration ---
-st.set_page_config(page_title="Mooncake's Vault", layout="wide", page_icon="")
-ROOT_DIR = Path(__file__).resolve().parent.parent
-DB_FILE = ROOT_DIR / 'sneakers.db'
+st.set_page_config(page_title="Mooncake's Vault", layout="wide", page_icon="👟")
+
+# --- Login System ---
+if "authenticated" not in st.session_state:
+    st.session_state.authenticated = False
+
+def check_login():
+    """Simple username/password check against secrets."""
+    user = st.session_state.username
+    pwd = st.session_state.password
+    
+    # Check if users are defined in secrets
+    if "users" in st.secrets:
+        if user in st.secrets["users"] and st.secrets["users"][user] == pwd:
+            st.session_state.authenticated = True
+            st.session_state.logged_in_user = user
+            del st.session_state.password  # Clean up
+            del st.session_state.username
+        else:
+            st.error("😕 Incorrect username or password")
+    else:
+        st.warning("No users defined in secrets.toml. Please set up [users] section.")
+
+if not st.session_state.authenticated:
+    st.markdown("## 🔐 Mooncake's Vault Login")
+    st.text_input("Username", key="username")
+    st.text_input("Password", type="password", key="password")
+    st.button("Log In", on_click=check_login)
+    st.stop()  # Stop execution here until logged in
 
 # --- UI/CSS Overrides ---
 st.markdown("""
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         /* Import Google Font */
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
 
         html, body, [class*="css"]  {
-            font-family: 'Inter', sans-serif;
+            font-family: 'Poppins', sans-serif;
+            color: #2d3436;
+        }
+        
+        .stApp {
+            background-image: linear-gradient(to top, #a8edea 0%, #fed6e3 100%);
         }
         
         /* Navbar-like header styling */
         .main-header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            background-color: rgba(255, 255, 255, 0.6);
+            backdrop-filter: blur(10px);
             padding: 2rem;
-            border-radius: 15px;
-            color: white;
+            border-radius: 20px;
+            border: 2px solid rgba(255, 255, 255, 0.5);
+            color: #2d3436;
             margin-bottom: 2rem;
-            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+            text-align: center;
         }
         .main-header h1 {
             font-weight: 700;
-            color: white !important;
+            color: #6c5ce7;
+            letter-spacing: -1px;
+        }
+        .main-header p {
+            color: #636e72;
+            font-size: 1.1rem;
         }
         
         /* Metric Cards */
         [data-testid="stMetric"] {
-            background-color: #ffffff;
-            border: 1px solid #e2e8f0;
+            background-color: rgba(255, 255, 255, 0.7);
+            border: none;
             padding: 20px;
-            border-radius: 10px;
-            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.1), 0 1px 2px 0 rgba(0, 0, 0, 0.06);
+            border-radius: 15px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            transition: transform 0.2s;
+        }
+        [data-testid="stMetric"]:hover {
+            transform: scale(1.05);
         }
         [data-testid="stMetricLabel"] {
             font-size: 0.9rem;
-            color: #64748b;
+            color: #636e72;
+            font-weight: 600;
         }
         [data-testid="stMetricValue"] {
-            font-size: 1.8rem;
-            color: #1e293b;
+            font-size: 2rem;
+            color: #2d3436;
             font-weight: 700;
         }
 
         /* Buttons */
         .stButton button {
-            background-color: #4f46e5;
+            background-image: linear-gradient(to right, #6c5ce7 0%, #a29bfe 51%, #6c5ce7 100%);
+            background-size: 200% auto;
             color: white;
-            border-radius: 8px;
+            border-radius: 50px;
             border: none;
-            padding: 0.5rem 1rem;
+            padding: 0.6rem 1.5rem;
             font-weight: 600;
-            transition: all 0.2s;
+            transition: 0.5s;
+            box-shadow: 0 4px 15px 0 rgba(108, 92, 231, 0.35);
         }
         .stButton button:hover {
-            background-color: #4338ca;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            background-position: right center;
+            color: #fff;
+            transform: translateY(-2px);
         }
     </style>
 """, unsafe_allow_html=True)
 
-# --- Database Functions ---
+# --- Google Sheets Connection ---
+conn = st.connection("gsheets", type=GSheetsConnection)
 
-def run_query(query, params=(), fetch=None):
-    """A generic function to run SQL queries."""
+def get_data():
+    """Loads the inventory from Google Sheets."""
     try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute(query, params)
-            conn.commit()
-            if fetch == 'one':
-                return cursor.fetchone()
-            if fetch == 'all':
-                return cursor.fetchall()
-            return cursor.lastrowid
-    except sqlite3.Error as e:
-        st.error(f"Database error: {e}")
-        return None
+        # Try loading "Inventory" worksheet, fallback to first sheet if missing
+        try:
+            df = conn.read(worksheet="Inventory", ttl=0)
+        except Exception:
+            df = conn.read(ttl=0)
 
-def check_and_migrate_schema():
-    """Ensures the database schema is up to date."""
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA table_info(Silhouettes)")
-            columns = [info[1] for info in cursor.fetchall()]
-            if 'genre' not in columns:
-                cursor.execute("ALTER TABLE Silhouettes ADD COLUMN genre TEXT")
-    except Exception:
-        pass
+        # Ensure standard columns exist if sheet is new
+        required_cols = ["Owner", "Category", "Brand", "Silhouette", "Genre", "Release", "Size", "Condition", "Price", "Status"]
+        
+        # Normalize columns (strip spaces)
+        df.columns = df.columns.str.strip()
+        
+        # Ensure all required columns exist (add missing ones)
+        for col in required_cols:
+            if col not in df.columns:
+                df[col] = None
 
-def load_data(category_id):
-    """Loads all inventory data into a pandas DataFrame."""
-    query = """
-    SELECT
-        i.id,
-        b.name AS "Brand",
-        s.name AS "Silhouette",
-        s.genre AS "Genre",
-        r.name AS "Release",
-        i.size AS "Size",
-        i.condition AS "Condition",
-        i.purchase_price AS "Price",
-        i.status AS "Status"
-    FROM Inventory i
-    JOIN Releases r ON i.release_id = r.id
-    JOIN Silhouettes s ON r.silhouette_id = s.id
-    JOIN Brands b ON s.brand_id = b.id
-    WHERE b.category_id = ?
-    ORDER BY i.id DESC;
-    """
-    try:
-        with sqlite3.connect(DB_FILE) as conn:
-            df = pd.read_sql_query(query, conn, params=(category_id,), index_col='id')
+        # Backfill Owner if missing (migration helper: claims existing data for current user)
+        df["Owner"] = df["Owner"].fillna(st.session_state.logged_in_user)
+            
+        # Drop completely empty rows
+        df = df.dropna(how="all")
         return df
     except Exception as e:
-        st.error(f"Failed to load data: {e}")
-        return pd.DataFrame()
+        # Show errors (like Auth or Permission issues)
+        st.error(f"⚠️ Error loading data: {e}")
+        
+        return pd.DataFrame(columns=["Owner", "Category", "Brand", "Silhouette", "Genre", "Release", "Size", "Condition", "Price", "Status"])
+
+def save_data(df):
+    """Saves the dataframe back to Google Sheets."""
+    try:
+        try:
+            conn.update(worksheet="Inventory", data=df)
+        except Exception:
+            # Fallback to default sheet if "Inventory" doesn't exist
+            conn.update(data=df)
+            
+        st.cache_data.clear() # Clear cache to force reload on next action
+        return True
+    except Exception as e:
+        st.error(f"Failed to save data: {e}")
+        return False
 
 # --- Main App ---
-# Title removed here to be placed dynamically later
 
-# Initialize DB if it doesn't exist
-if not DB_FILE.exists():
-    import init_db
-    init_db.main()
-    if not DB_FILE.exists():
-        st.error("Failed to initialize database. Check console logs.")
-        st.stop()
-    st.rerun()
+# Load Data
+df = get_data()
 
-# Run migration check
-check_and_migrate_schema()
+# Filter data for the current logged-in user (View Layer)
+user_df = df[df["Owner"] == st.session_state.logged_in_user]
 
 # --- Sidebar: Category Management ---
 st.sidebar.header("🗃️ Collections")
 
-# Fetch Categories
-try:
-    with sqlite3.connect(DB_FILE) as conn:
-        cursor = conn.cursor()
-        cursor.execute("SELECT id, name FROM Categories")
-        cats = cursor.fetchall()
-except sqlite3.OperationalError:
-    cats = None
+# Get unique categories from the user's data only
+if not user_df.empty and "Category" in user_df.columns:
+    existing_categories = sorted(user_df["Category"].dropna().unique().tolist())
+else:
+    existing_categories = ["Sneakers"]
 
-if cats is None:
-    st.warning("Database schema mismatch detected. Re-initializing database...")
-    import init_db
-    init_db.main()
-    st.rerun()
+selected_cat_name = st.sidebar.selectbox("Select Category", existing_categories)
 
-if not cats:
-    run_query("INSERT INTO Categories (name) VALUES ('Sneakers')")
-    cats = run_query("SELECT id, name FROM Categories", fetch='all')
-
-cat_map = {name: id for id, name in cats}
-selected_cat_name = st.sidebar.selectbox("Select Category", list(cat_map.keys()))
-selected_cat_id = cat_map[selected_cat_name]
-
-# Add New Category
-with st.sidebar.expander("✨ Create New Category"):
-    with st.form("add_category_form", clear_on_submit=True):
-        new_cat_name = st.text_input("Category Name (e.g. Vinyls)").strip()
-        submitted = st.form_submit_button("Create Category")
-
-        if submitted:
-            if new_cat_name:
-                if new_cat_name in cat_map:
-                    st.warning(f"Category '{new_cat_name}' already exists.")
-                elif run_query("INSERT INTO Categories (name) VALUES (?)", (new_cat_name,)) is not None:
-                    st.rerun()
-            else:
-                st.warning("Please enter a name.")
-
-# Delete Category
-with st.sidebar.expander("⛔ Delete Category"):
-    st.warning(f"This will delete '{selected_cat_name}' and hide its items.")
-    if st.button("Confirm Delete"):
-        run_query("DELETE FROM Categories WHERE id = ?", (selected_cat_id,))
-        st.rerun()
+# --- Sidebar: Developer Tools ---
+with st.sidebar.expander("🔧 Developer Tools"):
+    if st.button("Load Dummy Data"):
+        dummy_data = [
+            {"Owner": st.session_state.logged_in_user, "Category": "Sneakers", "Brand": "Nike", "Silhouette": "Air Jordan 1", "Genre": None, "Release": "Chicago Lost & Found", "Size": 10.5, "Condition": "New", "Price": 180.00, "Status": "In Stock"},
+            {"Owner": st.session_state.logged_in_user, "Category": "Sneakers", "Brand": "Adidas", "Silhouette": "Yeezy Boost 350", "Genre": None, "Release": "Turtle Dove", "Size": 10.0, "Condition": "Used", "Price": 250.00, "Status": "In Stock"},
+            {"Owner": st.session_state.logged_in_user, "Category": "Sneakers", "Brand": "New Balance", "Silhouette": "990v3", "Genre": None, "Release": "Teddy Santis Marblehead", "Size": 11.0, "Condition": "New", "Price": 210.00, "Status": "In Stock"},
+            {"Owner": st.session_state.logged_in_user, "Category": "Vinyls", "Brand": "Pink Floyd", "Silhouette": "Dark Side of the Moon", "Genre": "Rock", "Release": "1973 UK Pressing", "Size": None, "Condition": "Good", "Price": 45.00, "Status": "In Stock"},
+            {"Owner": st.session_state.logged_in_user, "Category": "Vinyls", "Brand": "Kendrick Lamar", "Silhouette": "DAMN.", "Genre": "Hip Hop", "Release": "Collector Edition", "Size": None, "Condition": "New", "Price": 35.00, "Status": "In Stock"},
+            {"Owner": st.session_state.logged_in_user, "Category": "Books", "Brand": "J.R.R. Tolkien", "Silhouette": "The Hobbit", "Genre": "Fantasy", "Release": "75th Anniversary", "Size": None, "Condition": "New", "Price": 15.00, "Status": "In Stock"}
+        ]
+        dummy_df = pd.DataFrame(dummy_data)
+        
+        # Concatenate with existing data if it exists
+        if not df.empty:
+            updated_df = pd.concat([df, dummy_df], ignore_index=True)
+        else:
+            updated_df = dummy_df
+            
+        st.write("Saving the following data...", updated_df) # Preview data
+        if save_data(updated_df):
+            st.success("Dummy data loaded!")
+            st.balloons()
+            # Removed st.rerun() so you can see the success message and any errors
+            # Click "Rerun" in the top right manually if needed
 
 # Dynamic Labels based on Category
 SHOW_GENRE = False
@@ -204,19 +224,19 @@ else:
 # --- Custom Header ---
 st.markdown(f"""
     <div class="main-header">
-        <h1 class="display-4"> Mooncake's Vault</h1>
-        <p class="lead" style="opacity: 0.9;">Tracking your <strong>{selected_cat_name}</strong> collection.</p>
+        <h1 class="display-4">🚀 Mooncake's Vault</h1>
+        <p class="lead">Tracking your <strong>{selected_cat_name}</strong> collection.</p>
     </div>
 """, unsafe_allow_html=True)
 
 # Create Tabs
 tab_dashboard, tab_add, tab_edit = st.tabs([f"📈 {selected_cat_name} Stats", "📥 Add Item", "🔧 Manage Items"])
 
-# Load data for all tabs
-df = load_data(selected_cat_id)
+# Filter data for the selected category
+cat_df = user_df[user_df["Category"] == selected_cat_name].copy()
 
-# Rename columns for display based on dynamic labels
-display_df = df.rename(columns={"Brand": LBL_BRAND, "Silhouette": LBL_SIL, "Release": LBL_REL})
+# Rename columns for display
+display_df = cat_df.rename(columns={"Brand": LBL_BRAND, "Silhouette": LBL_SIL, "Release": LBL_REL})
 
 # --- Dashboard Tab ---
 with tab_dashboard:
@@ -224,11 +244,11 @@ with tab_dashboard:
         st.info(f"Your {selected_cat_name} inventory is empty. Add an item to get started.")
     else:
         st.header("Collection Overview")
-        # Top Metrics
-        total_pairs = len(df)
-        total_value = df[df['Status'] != 'Sold']['Price'].sum()
-        avg_price = df['Price'].mean()
-        max_price = df['Price'].max()
+        
+        total_pairs = len(cat_df)
+        total_value = cat_df[cat_df['Status'] != 'Sold']['Price'].sum()
+        avg_price = cat_df['Price'].mean()
+        max_price = cat_df['Price'].max()
 
         m1, m2, m3, m4 = st.columns(4)
         m1.metric("Total Pairs", f"{total_pairs}")
@@ -266,6 +286,9 @@ with tab_dashboard:
 with tab_add:
     st.header(f"Add to {selected_cat_name}")
     with st.form("add_form", clear_on_submit=True):
+        # Allow user to type a new category or use the current one
+        category_input = st.text_input("Category", value=selected_cat_name)
+        
         brand = st.text_input(LBL_BRAND)
         silhouette = st.text_input(LBL_SIL)
         if SHOW_GENRE:
@@ -285,21 +308,26 @@ with tab_add:
             if not all([brand, silhouette, release]):
                 st.warning("Please fill in all fields.")
             else:
-                brand_id = run_query("INSERT OR IGNORE INTO Brands (name, category_id) VALUES (?, ?);", (brand, selected_cat_id))
-                brand_id = run_query("SELECT id FROM Brands WHERE name=? AND category_id=?", (brand, selected_cat_id), fetch='one')[0]
-
-                sil_id = run_query("INSERT OR IGNORE INTO Silhouettes (name, brand_id, genre) VALUES (?,?,?);", (silhouette, brand_id, genre))
-                sil_id = run_query("SELECT id FROM Silhouettes WHERE name=? AND brand_id=?", (silhouette, brand_id), fetch='one')[0]
-
-                rel_id = run_query("INSERT OR IGNORE INTO Releases (name, silhouette_id) VALUES (?,?);", (release, sil_id))
-                rel_id = run_query("SELECT id FROM Releases WHERE name=? AND silhouette_id=?", (release, sil_id), fetch='one')[0]
+                # Create new row
+                new_row = pd.DataFrame([{
+                    "Owner": st.session_state.logged_in_user,
+                    "Category": category_input,
+                    "Brand": brand,
+                    "Silhouette": silhouette,
+                    "Genre": genre,
+                    "Release": release,
+                    "Size": size,
+                    "Condition": condition,
+                    "Price": price,
+                    "Status": "In Stock"
+                }])
                 
-                run_query(
-                    "INSERT INTO Inventory (release_id, size, condition, purchase_price, status) VALUES (?,?,?,?,?)",
-                    (rel_id, size, condition, price, 'In Stock')
-                )
-                st.success("Item added successfully!")
-                st.rerun()
+                # Append and Save
+                updated_df = pd.concat([df, new_row], ignore_index=True)
+                if save_data(updated_df):
+                    st.success("Item added successfully!")
+                    st.balloons()
+                    st.rerun()
 
 # --- Edit / Delete Tab ---
 with tab_edit:
@@ -308,11 +336,11 @@ with tab_edit:
         st.info("No items to manage.")
     else:
         # Create a mapping from a display string to the inventory ID
-        shoe_options = {f'{idx}: {row[LBL_BRAND]} {row[LBL_SIL]} - {row[LBL_REL]}': idx for idx, row in display_df.iterrows()}
+        shoe_options = {f'{idx}: {row["Brand"]} {row["Silhouette"]} - {row["Release"]}': idx for idx, row in cat_df.iterrows()}
         selected_key = st.selectbox("Select an item to manage", options=shoe_options.keys())
         selected_id = shoe_options[selected_key]
         
-        shoe_data = df.loc[selected_id]
+        shoe_data = cat_df.loc[selected_id]
 
         st.markdown("---")
         
@@ -338,26 +366,16 @@ with tab_edit:
             update_submitted = st.form_submit_button("Update Item")
 
             if update_submitted:
-                run_query(
-                    "UPDATE Inventory SET purchase_price=?, condition=?, status=? WHERE id=?",
-                    (new_price, new_condition, new_status, selected_id)
-                )
+                # Update specific fields in the main dataframe
+                df.at[selected_id, "Genre"] = new_genre
+                df.at[selected_id, "Price"] = new_price
+                df.at[selected_id, "Condition"] = new_condition
+                df.at[selected_id, "Status"] = new_status
                 
-                # Update Genre in Silhouettes table
-                run_query(
-                    """
-                    UPDATE Silhouettes 
-                    SET genre = ? 
-                    WHERE id = (
-                        SELECT r.silhouette_id 
-                        FROM Releases r 
-                        JOIN Inventory i ON r.id = i.release_id 
-                        WHERE i.id = ?)
-                    """,
-                    (new_genre, selected_id)
-                )
-                st.success("Item details updated!")
-                st.rerun()
+                if save_data(df):
+                    st.success("Item details updated!")
+                    st.balloons()
+                    st.rerun()
 
         st.markdown("---")
 
@@ -365,6 +383,7 @@ with tab_edit:
         st.subheader("Delete Item")
         st.error("Warning: This action is permanent and cannot be undone.")
         if st.button("Delete Permanently"):
-            run_query("DELETE FROM Inventory WHERE id=?", (selected_id,))
-            st.success("Item has been deleted from the database.")
-            st.rerun()
+            df = df.drop(selected_id)
+            if save_data(df):
+                st.success("Item has been deleted from the database.")
+                st.rerun()
