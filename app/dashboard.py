@@ -38,78 +38,79 @@ st.markdown("""
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
     <style>
         /* Import Google Font */
-        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;600;700&display=swap');
+        @import url('https://fonts.googleapis.com/css2?family=Chewy&display=swap');
 
         html, body, [class*="css"]  {
-            font-family: 'Poppins', sans-serif;
-            color: #2d3436;
+            font-family: 'Chewy', cursive;
+            color: #2f362f;
         }
         
         .stApp {
-            background-image: linear-gradient(to top, #a8edea 0%, #fed6e3 100%);
+            background-color: #F6E9E1;
+            background-image: none;
         }
         
         /* Navbar-like header styling */
         .main-header {
-            background-color: rgba(255, 255, 255, 0.6);
-            backdrop-filter: blur(10px);
+            background-color: #FFFFFF;
             padding: 2rem;
             border-radius: 20px;
-            border: 2px solid rgba(255, 255, 255, 0.5);
-            color: #2d3436;
+            border: 3px solid #E8C7B2;
+            color: #2f362f;
             margin-bottom: 2rem;
-            box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.1);
+            box-shadow: 0 6px 0 #EFD7C8;
             text-align: center;
         }
         .main-header h1 {
-            font-weight: 700;
-            color: #6c5ce7;
-            letter-spacing: -1px;
+            font-weight: 400;
+            color: #E8C7B2;
+            letter-spacing: 2px;
+            font-size: 3rem;
         }
         .main-header p {
-            color: #636e72;
-            font-size: 1.1rem;
+            color: #2f362f;
+            font-size: 1.3rem;
+            opacity: 0.9;
         }
         
         /* Metric Cards */
         [data-testid="stMetric"] {
-            background-color: rgba(255, 255, 255, 0.7);
-            border: none;
+            background-color: #FFFFFF;
+            border: 2px solid #EFD7C8;
             padding: 20px;
             border-radius: 15px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+            box-shadow: 4px 4px 0 #E8C7B2;
             transition: transform 0.2s;
         }
         [data-testid="stMetric"]:hover {
-            transform: scale(1.05);
+            transform: scale(1.02);
         }
         [data-testid="stMetricLabel"] {
-            font-size: 0.9rem;
-            color: #636e72;
-            font-weight: 600;
+            font-size: 1.1rem;
+            color: #E8C7B2;
         }
         [data-testid="stMetricValue"] {
-            font-size: 2rem;
-            color: #2d3436;
-            font-weight: 700;
+            font-size: 2.2rem;
+            color: #2f362f;
         }
 
         /* Buttons */
         .stButton button {
-            background-image: linear-gradient(to right, #6c5ce7 0%, #a29bfe 51%, #6c5ce7 100%);
-            background-size: 200% auto;
-            color: white;
-            border-radius: 50px;
+            background-color: #E8C7B2;
+            background-image: none;
+            color: #FFFFFF;
+            border-radius: 15px;
             border: none;
             padding: 0.6rem 1.5rem;
-            font-weight: 600;
-            transition: 0.5s;
-            box-shadow: 0 4px 15px 0 rgba(108, 92, 231, 0.35);
+            font-size: 1.2rem;
+            transition: 0.2s;
+            box-shadow: 0 4px 0 #EFD7C8;
         }
         .stButton button:hover {
-            background-position: right center;
-            color: #fff;
-            transform: translateY(-2px);
+            background-color: #EFD7C8;
+            color: #FFFFFF;
+            transform: translateY(2px);
+            box-shadow: 0 2px 0 #E8C7B2;
         }
     </style>
 """, unsafe_allow_html=True)
@@ -272,7 +273,7 @@ with tab_dashboard:
             
             st.subheader(f"Value by {chart_group}")
             chart_data = display_df.groupby(chart_group)["Price"].sum()
-            st.bar_chart(chart_data)
+            st.bar_chart(chart_data, color="#E8C7B2")
         # Full Dataframe
         with c2:
             st.subheader("Full Inventory")
