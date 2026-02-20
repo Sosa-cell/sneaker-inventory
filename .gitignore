@@ -1,0 +1,13 @@
+# Python
+__pycache__/
+*.pyc
+
+# Virtual Environment
+venv/
+env/
+
+# Database (We exclude this so your local data doesn't conflict with the cloud)
+sneakers.db
+
+# IDE
+.vscode/
